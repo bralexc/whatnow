@@ -1,0 +1,69 @@
+name: Windows x64
+
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: '0'
+      GOARCH: amd64
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build standalone executable with embedded web UI
+        run: node scripts/build.mjs
+      - name: Verify Go modules
+        run: go mod verify
+      - name: Test Go, TUI, Windows paths, and native Credential Manager
+        run: go test -count=1 ./...
+      - name: Vet Go
+        run: go vet ./...
+      - name: Test frontend
+        working-directory: web
+        run: npm test
+      - name: Check frontend types
+        working-directory: web
+        run: npm run check
+      - name: Smoke test production executable outside the checkout
+        run: node scripts/smoke.mjs dist/whatnow.exe
+      - name: Install Chromium for browser tests
+        working-directory: web
+        run: npx --no-install playwright install chromium
+      - name: Test browser workflows with the fake model
+        working-directory: web
+        run: npx --no-install playwright test
+      - name: Upload standalone executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: whatnow-windows-x64
+          path: dist/whatnow.exe
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload browser failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-browser-test-results
+          path: web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7

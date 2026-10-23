@@ -4,6 +4,8 @@ coverage.out
 internal/web/dist/*
 !internal/web/dist/.gitkeep
 /whatnow-e2e
+/whatnow.exe
+/whatnow-e2e.exe
 /.demo/
 tui.log
 /dist/

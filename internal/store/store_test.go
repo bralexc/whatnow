@@ -52,8 +52,8 @@ func TestOpenTwiceKeepsData(t *testing.T) {
 	}
 }
 
-func TestOpenPathWithSpaces(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "Application Support")
+func TestOpenPathWithSpacesAndUnicode(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Application Support", "José & 日記 #1")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -62,6 +62,9 @@ func TestOpenPathWithSpaces(t *testing.T) {
 		t.Fatalf("open path with spaces: %v", err)
 	}
 	db.Close()
+	if _, err := os.Stat(filepath.Join(dir, "w.db")); err != nil {
+		t.Fatalf("database was not created at the requested path: %v", err)
+	}
 }
 
 func TestForeignKeysEnforced(t *testing.T) {

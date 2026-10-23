@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,10 +10,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata" // Standalone Windows installations have no IANA timezone database.
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -75,13 +78,49 @@ func open(dbPath string) (*app.App, error) {
 }
 
 func serve(addr, dbPath string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return serveContext(ctx, addr, dbPath)
+}
+
+func serveContext(ctx context.Context, addr, dbPath string) error {
 	a, err := open(dbPath)
 	if err != nil {
 		return err
 	}
 	defer a.Close()
-	log.Printf("whatnow listening on http://%s (db %s)", addr, a.DBPath)
-	return newServer(a, addr).ListenAndServe()
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer ln.Close()
+	log.Printf("whatnow listening on http://%s (db %s)", ln.Addr(), a.DBPath)
+	return serveHTTP(ctx, newServer(a, addr), ln)
+}
+
+// Cancel active requests (including SSE) before waiting for HTTP shutdown, then let the
+// caller close the background workers and SQLite. Ctrl+C also reaches this path on Windows.
+func serveHTTP(ctx context.Context, srv *http.Server, ln net.Listener) error {
+	defer srv.Close()
+	srv.BaseContext = func(net.Listener) context.Context { return ctx }
+	done := make(chan error, 1)
+	go func() { done <- srv.Serve(ln) }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdown); err != nil {
+			srv.Close()
+			<-done
+			return err
+		}
+		if err := <-done; !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	}
 }
 
 func newServer(a *app.App, addr string) *http.Server {
@@ -106,7 +145,7 @@ func newServer(a *app.App, addr string) *http.Server {
 // listenUnlessTaken listens on addr, or returns a nil listener when something already holds it.
 func listenUnlessTaken(addr string) (net.Listener, error) {
 	ln, err := net.Listen("tcp", addr)
-	if errors.Is(err, syscall.EADDRINUSE) {
+	if addressInUse(err) {
 		return nil, nil
 	}
 	return ln, err

@@ -50,6 +50,9 @@ set to "focus peaks before lunch, cooked after 3pm, meetings drain me".
 
 ## Install
 
+**Windows 11 (x64):** download the standalone `whatnow.exe` workflow artifact, or build it from
+source. See [Windows installation, credentials, and development](docs/windows.md).
+
 You'll need an API key for Anthropic, OpenAI, or an OpenAI-compatible provider to run it (see
 [Models](#models)).
 

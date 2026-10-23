@@ -1,0 +1,3 @@
+# Go golden files and scripts must not change when checked out on Windows.
+* text=auto eol=lf
+*.png binary

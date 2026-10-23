@@ -33,6 +33,7 @@ func TestOpenPutsTheDatabaseInTheUserConfigDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		t.Fatal(err)
@@ -93,6 +94,7 @@ func TestCloseClosesTheDatabase(t *testing.T) {
 func TestOpenFailsWithNoUserConfigDir(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("APPDATA", "")
 	if _, err := app.Open(app.Options{NewClient: fakeClient, Now: time.Now, Loc: time.UTC}); err == nil {
 		t.Error("Open succeeded with no home")
 	}

@@ -8,10 +8,16 @@ export default defineConfig({
 	testDir: 'e2e',
 	// One server and one database: tests take turns, each starting from a wiped install.
 	workers: 1,
-	use: { baseURL: `http://${addr}`, trace: 'retain-on-failure' },
+	use: {
+		baseURL: `http://${addr}`,
+		trace: 'retain-on-failure',
+		launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
+	},
 	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 	webServer: {
-		command: `cd .. && go build -tags e2e -o whatnow-e2e ./cmd/whatnow && exec ./whatnow-e2e serve -addr ${addr} -db "$(mktemp -d)/whatnow.db"`,
-		url: `http://${addr}/api/v1/settings`
+		command: 'node ../scripts/e2e-server.mjs',
+		url: `http://${addr}/api/v1/settings`,
+		timeout: 120_000,
+		gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 }
 	}
 });

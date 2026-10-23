@@ -15,9 +15,7 @@ lint:
 
 # Builds the web client into the directory the Go binary embeds.
 web:
-    cd web && npm ci && npm run build
-    find internal/web/dist -mindepth 1 ! -name .gitkeep -delete
-    cp -R web/build/. internal/web/dist/
+    cd web && npm ci && npm run build:embed
 
 build: web
     go build -o whatnow ./cmd/whatnow
@@ -61,10 +59,7 @@ tui *args:
 # Runs the API and the Vite dev server, which proxies /api to it. Open http://localhost:5173.
 [positional-arguments]
 dev *args:
-    #!/usr/bin/env bash
-    trap 'kill 0' EXIT
-    go run ./cmd/whatnow serve "$@" &
-    cd web && npm run dev
+    node scripts/dev.mjs "$@"
 
 # Runs the Playwright suite against a server built with the fake model, so no model is ever called.
 e2e: web
