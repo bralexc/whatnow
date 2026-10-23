@@ -40,12 +40,17 @@ type Deps struct {
 	// Clean runs cleanup on a captured task right away, for the morning's brain dump.
 	Clean func(ctx context.Context, captured domain.Task) (int64, error)
 	// NewClient builds an LLM client from settings, for the connection test.
-	NewClient func(settings.Settings) (llm.Client, settings.ProviderConfig, error)
-	Planner   *planner.Planner
-	Agent     *agent.Agent
+	NewClient func(context.Context, settings.Settings) (llm.Client, settings.ProviderConfig, error)
+	// Keys holds the provider API keys.
+	Keys    settings.Keys
+	Planner *planner.Planner
+	Agent   *agent.Agent
 	// Static serves the web client for every GET outside the API.
 	Static       http.Handler
 	Integrations *integrations.Runner
+	// Hosted serves one user of a shared server: the front door has already authenticated the
+	// request, so there is no local-only guard and no allowed hosts to set.
+	Hosted bool
 }
 
 type Server struct {
@@ -95,13 +100,20 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/integrations", s.listIntegrations)
 	mux.HandleFunc("PUT /api/v1/integrations/{id}", s.saveIntegration)
 	mux.HandleFunc("PUT /api/v1/integrations/{id}/enabled", s.enableIntegration)
+	mux.HandleFunc("PUT /api/v1/integrations/{id}/via", s.setVia)
 	mux.HandleFunc("POST /api/v1/integrations/{id}/pull", s.pullIntegration)
 	mux.HandleFunc("POST /api/v1/integrations/{id}/add", s.addTickets)
 	mux.HandleFunc("POST /api/v1/integrations/{id}/skipped", s.skipIntegration)
 	mux.HandleFunc("DELETE /api/v1/integrations/{id}/skipped/{key}", s.unskipIntegration)
 	mux.HandleFunc("DELETE /api/v1/data", s.deleteData)
 	mux.HandleFunc("GET /api/v1/clock", s.clock)
+	mux.HandleFunc("GET /api/v1/session", s.session)
 	mux.Handle("GET /", d.Static)
+	if d.Hosted {
+		// Only the front door reaches this, for a push made with the user's key.
+		mux.HandleFunc("POST /api/v1/integrations/{id}/received", s.receiveTickets)
+		return mux
+	}
 	return s.localOnly(mux)
 }
 

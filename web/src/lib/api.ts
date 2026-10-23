@@ -7,7 +7,7 @@ export type Tier = 'must' | 'should' | 'could';
 export type Source = 'user' | 'chat' | 'cleanup' | 'triage';
 export type Provider = 'anthropic' | 'openai';
 /** Where a provider's key comes from. Empty means there is none. */
-export type KeySource = '' | 'keychain' | 'env';
+export type KeySource = '' | 'keychain' | 'env' | 'saved';
 
 /** A link or key pulled out of a task's text. */
 export interface Ref {
@@ -139,6 +139,12 @@ export interface Message {
 	error: string;
 }
 
+/** Who the server says is asking. Local mode has no sign-in, so hosted is false there. */
+export interface Session {
+	hosted: boolean;
+	user: { name: string; email: string } | null;
+}
+
 /** The response to every write. */
 export interface Mutation {
 	batch_id: number;
@@ -177,6 +183,7 @@ export interface Settings {
 	theme: Theme;
 	onboarded: boolean;
 	allowed_hosts: string[];
+	time_zone: string;
 }
 
 export type Theme = '' | 'plain' | 'neon' | 'terminal' | 'paper' | 'vaporwave';
@@ -235,6 +242,18 @@ export interface Integration {
 	skipped: Skip[];
 	/** Whether a pull writes events or offers tickets to pick. */
 	pulls: 'events' | 'tickets';
+	/** How it's reached: by the server, or from the user's computer, which sends what it pulled. */
+	via: Via;
+	/** When the user's computer last sent tickets. */
+	sent_at: string | null;
+}
+
+export type Via = 'direct' | 'computer';
+
+/** The key `whatnow jira push` sends with. Only the server ever sees the key itself again. */
+export interface PushKey {
+	created_at: string;
+	last_used_at: string | null;
 }
 
 /** What saving an integration sends. A blank secret keeps the saved one; a row with no id is new. */
@@ -270,6 +289,10 @@ export interface PullSource {
 	tickets: Ticket[];
 	/** How many more tickets matched than were returned. */
 	more: number;
+	/** Another way in that might get past the error: sending from the user's computer. */
+	hint?: 'computer';
+	/** When the user's computer sent these tickets. */
+	sent_at?: string;
 }
 
 export interface PullResult {
@@ -302,6 +325,16 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
+	session: () => request<Session>('GET', '/session'),
+	// Sign-out lives outside /api/v1, so it can't go through request().
+	logout: async (): Promise<void> => {
+		const res = await fetch('/auth/logout', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{}'
+		});
+		if (!res.ok) throw new ApiError(res.status, res.statusText);
+	},
 	today: () => request<Today>('GET', '/today'),
 	events: (date: string) => request<CalendarEvent[]>('GET', `/events?date=${date}`),
 	deleteEvent: (id: number) => request<Mutation>('DELETE', `/events/${id}`),
@@ -343,7 +376,12 @@ export const api = {
 	saveIntegration: (id: string, u: IntegrationUpdate) => request<Integration>('PUT', `/integrations/${id}`, u),
 	enableIntegration: (id: string, enabled: boolean) =>
 		request<Integration>('PUT', `/integrations/${id}/enabled`, { enabled }),
+	setVia: (id: string, via: Via) => request<Integration>('PUT', `/integrations/${id}/via`, { via }),
 	pull: (id: string) => request<PullResult>('POST', `/integrations/${id}/pull`),
+	pushKey: () => request<{ key: PushKey | null }>('GET', '/integrations/jira/key'),
+	/** A new key, replacing the old one. This is the only time it's shown. */
+	createPushKey: () => request<{ key: string }>('POST', '/integrations/jira/key'),
+	revokePushKey: () => request<void>('DELETE', '/integrations/jira/key'),
 	addTickets: (id: string, tickets: Ticket[]) => request<Mutation>('POST', `/integrations/${id}/add`, { tickets }),
 	skip: (id: string, key: string, title: string, event_id?: number) =>
 		request<Mutation>('POST', `/integrations/${id}/skipped`, { key, title, event_id }),

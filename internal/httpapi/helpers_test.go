@@ -20,6 +20,7 @@ import (
 	"github.com/jameynakama/whatnow/internal/integrations/jira"
 	"github.com/jameynakama/whatnow/internal/llm"
 	"github.com/jameynakama/whatnow/internal/planner"
+	"github.com/jameynakama/whatnow/internal/secrets"
 	"github.com/jameynakama/whatnow/internal/service"
 	"github.com/jameynakama/whatnow/internal/settings"
 	"github.com/jameynakama/whatnow/internal/store"
@@ -47,7 +48,10 @@ type testAPI struct {
 	jiraURL string
 }
 
-func newAPI(t *testing.T) *testAPI {
+func newAPI(t *testing.T) *testAPI { return newAPIHosted(t, false) }
+
+// newAPIHosted is newAPI with the handler built as the hosted front door's inner handler is.
+func newAPIHosted(t *testing.T, hosted bool) *testAPI {
 	t.Helper()
 	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -79,7 +83,9 @@ func newAPI(t *testing.T) *testAPI {
 		Now:       now,
 		OnCapture: func(task domain.Task) { api.captured = append(api.captured, task.ID) },
 		Clean:     runner.Clean,
-		NewClient: func(settings.Settings) (llm.Client, settings.ProviderConfig, error) {
+		Keys:      settings.LocalKeys(),
+		Hosted:    hosted,
+		NewClient: func(context.Context, settings.Settings) (llm.Client, settings.ProviderConfig, error) {
 			if api.model == nil {
 				return nil, settings.ProviderConfig{}, settings.ErrNotConfigured
 			}
@@ -88,7 +94,7 @@ func newAPI(t *testing.T) *testAPI {
 		Planner: plans,
 		Agent:   agent.New(svc, api.hub, plans, testLoc, now),
 		Static:  http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "static") }),
-		Integrations: integrations.NewRunner(db, svc, api.hub, testLoc, now,
+		Integrations: integrations.NewRunner(db, svc, api.hub, testLoc, now, secrets.Keychain{},
 			gcal.New(nil), jira.New(nil),
 		),
 	})

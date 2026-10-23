@@ -29,6 +29,10 @@ For a feel of a whole day, from the morning brain dump to the wrap-up, read [dem
   address, no OAuth), and pick tasks from Jira tickets (by your own JQL search) and from the PRs
   a running [Review Queue](https://github.com/oreillymedia-ai-transformation/review-queue) ranks
   for your review. Pulls happen only when you ask, from the morning brain dump or from settings.
+  When hosted whatnow can't reach your Jira, because it's behind a VPN or on an intranet, set
+  Jira to *From my computer* and run `whatnow jira setup` once on a Mac that can reach it (install
+  with `brew install jameynakama/tap/whatnow`). After that, `whatnow jira push` sends your search
+  and the next pull offers it.
 
 You can shape it in settings. *Assistant style* sets its voice ("playful and friendly, with the
 odd koan"). *About me* tells the planner how you work ("my focus peaks before lunch", "meetings
@@ -128,6 +132,8 @@ add, and chat. These are web-only:
 - nudges
 - editing a task's details, and the all-tasks list
 
+Hosting it for other people, on your own server? See [docs/hosting.md](docs/hosting.md).
+
 ## Development
 
 ```sh
@@ -140,4 +146,8 @@ just demo    # a throwaway database on a clock you move with `just clock 13:45`
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[AGPL-3.0](LICENSE). Use it, run it, and change it freely. If you run a modified whatnow for other
+people, over a network or otherwise, you must offer them its source under the same license.
+Contributions are accepted under the same license.
+
+Commits up to `8481fdf` were released under the MIT license, and copies of them remain under it.

@@ -17,7 +17,9 @@ import (
 	"github.com/jameynakama/whatnow/internal/integrations/jira"
 	"github.com/jameynakama/whatnow/internal/integrations/reviewqueue"
 	"github.com/jameynakama/whatnow/internal/llm"
+	"github.com/jameynakama/whatnow/internal/outbound"
 	"github.com/jameynakama/whatnow/internal/planner"
+	"github.com/jameynakama/whatnow/internal/secrets"
 	"github.com/jameynakama/whatnow/internal/service"
 	"github.com/jameynakama/whatnow/internal/settings"
 	"github.com/jameynakama/whatnow/internal/store"
@@ -29,9 +31,18 @@ import (
 type Options struct {
 	// DBPath defaults to <user config dir>/whatnow/whatnow.db.
 	DBPath    string
-	NewClient func(settings.Settings) (llm.Client, settings.ProviderConfig, error)
+	NewClient func(context.Context, settings.Clients, settings.Settings) (llm.Client, settings.ProviderConfig, error)
 	Now       func() time.Time
 	Loc       *time.Location
+	// Hosted makes this one user's App on a shared server. Nil is local mode.
+	Hosted *Hosted
+}
+
+// Hosted is what a hosted App needs beyond local mode. Its secrets are sealed in the user's
+// database, its outbound requests can't reach private addresses, it has no Review Queue, and
+// its Loc comes from the user's time zone setting, not Options.Loc.
+type Hosted struct {
+	SealKey [32]byte
 }
 
 // App is the running set of parts. Close stops its background work and closes the database.
@@ -45,11 +56,14 @@ type App struct {
 	Agent   *agent.Agent
 	Now     func() time.Time
 	Loc     *time.Location
+	// Clients is where this app's keys live and what its model clients send with.
+	Clients settings.Clients
 	// Integrations pull outside work in, such as calendar events, when the user asks.
 	Integrations *integrations.Runner
 
-	stop    context.CancelFunc
-	running sync.WaitGroup
+	newClient func(context.Context, settings.Clients, settings.Settings) (llm.Client, settings.ProviderConfig, error)
+	stop      context.CancelFunc
+	running   sync.WaitGroup
 }
 
 // Open opens the database and starts the cleanup runner and the replan watcher.
@@ -70,6 +84,19 @@ func Open(o Options) (*App, error) {
 		return nil, err
 	}
 
+	clients := settings.Clients{Keys: settings.LocalKeys()}
+	var vault secrets.Store = secrets.Keychain{}
+	pulls := []integrations.Integration{gcal.New(nil), jira.New(nil), reviewqueue.New(nil)}
+	loc := o.Loc
+	if o.Hosted != nil {
+		sealed := secrets.NewSealed(db, o.Hosted.SealKey)
+		vault = sealed
+		// A streamed chat reply can outlast any overall timeout, so the model clients get none.
+		clients = settings.Clients{Keys: settings.SealedKeys(sealed), HTTP: outbound.Client(0)}
+		guarded := outbound.Client(30 * time.Second)
+		pulls = []integrations.Integration{gcal.New(guarded), jira.New(guarded)}
+		loc = SavedLoc(context.Background(), db)
+	}
 	svc := service.New(db, o.Now)
 	hub := stream.NewHub()
 	active := func(ctx context.Context) (llm.Client, settings.ProviderConfig, settings.Settings, error) {
@@ -77,23 +104,23 @@ func Open(o Options) (*App, error) {
 		if err != nil {
 			return nil, settings.ProviderConfig{}, settings.Settings{}, err
 		}
-		client, cfg, err := o.NewClient(s)
+		client, cfg, err := o.NewClient(ctx, clients, s)
 		return client, cfg, s, err
 	}
-	plans := planner.New(svc, hub, active, o.Loc, o.Now)
+	plans := planner.New(svc, hub, active, loc, o.Now)
 	a := &App{
-		DB:      db,
-		DBPath:  path,
-		Service: svc,
-		Hub:     hub,
-		Cleanup: cleanup.New(svc, hub, active, o.Loc, o.Now),
-		Planner: plans,
-		Agent:   agent.New(svc, hub, plans, o.Loc, o.Now),
-		Now:     o.Now,
-		Loc:     o.Loc,
-		Integrations: integrations.NewRunner(db, svc, hub, o.Loc, o.Now,
-			gcal.New(nil), jira.New(nil), reviewqueue.New(nil),
-		),
+		DB:           db,
+		DBPath:       path,
+		Service:      svc,
+		Hub:          hub,
+		Cleanup:      cleanup.New(svc, hub, active, loc, o.Now),
+		Planner:      plans,
+		Agent:        agent.New(svc, hub, plans, loc, o.Now),
+		Now:          o.Now,
+		Loc:          loc,
+		Clients:      clients,
+		newClient:    o.NewClient,
+		Integrations: integrations.NewRunner(db, svc, hub, loc, o.Now, vault, pulls...),
 	}
 
 	ctx, stop := context.WithCancel(context.Background())
@@ -110,6 +137,21 @@ func Open(o Options) (*App, error) {
 		plans.Run(ctx, watched)
 	}()
 	return a, nil
+}
+
+// SavedLoc is the time zone saved in a hosted user's settings, or UTC when none is.
+func SavedLoc(ctx context.Context, db *sql.DB) *time.Location {
+	if saved, err := settings.Load(ctx, db); err == nil && saved.TimeZone != "" {
+		if l, err := time.LoadLocation(saved.TimeZone); err == nil {
+			return l
+		}
+	}
+	return time.UTC
+}
+
+// NewClient builds the model client for s from this app's keys and HTTP client.
+func (a *App) NewClient(ctx context.Context, s settings.Settings) (llm.Client, settings.ProviderConfig, error) {
+	return a.newClient(ctx, a.Clients, s)
 }
 
 // Close stops the background work, waits for it, and closes the database.

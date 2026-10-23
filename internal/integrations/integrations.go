@@ -33,7 +33,7 @@ type Kind string
 const (
 	// Text is kept in the database.
 	Text Kind = "text"
-	// Secret is kept in the keychain and never leaves the server.
+	// Secret is kept in the secrets store and never leaves the server.
 	Secret Kind = "secret"
 	// List is rows of Text and Secret columns, given by Fields. Lists don't nest.
 	List Kind = "list"
@@ -72,6 +72,9 @@ type Source struct {
 	// Tickets is what a ticket integration pulled, and More how many matched beyond them.
 	Tickets []Ticket
 	More    int
+	// Hint names another way in that might get past Err: "computer" for sending from the user's
+	// own computer.
+	Hint string
 }
 
 // Event is one pulled event. Key is its identity in the feed and stays the same when it moves.

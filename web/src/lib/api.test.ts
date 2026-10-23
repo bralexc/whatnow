@@ -26,6 +26,23 @@ describe('api', () => {
 	});
 });
 
+describe('logout', () => {
+	it('Should post JSON to the auth route, outside the API prefix', async () => {
+		const fetch = stubFetch(204, null);
+		await api.logout();
+		expect(fetch).toHaveBeenCalledWith('/auth/logout', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{}'
+		});
+	});
+
+	it('Should throw when the server refuses', async () => {
+		stubFetch(403, {});
+		await expect(api.logout()).rejects.toBeInstanceOf(ApiError);
+	});
+});
+
 describe('configured', () => {
 	const view = (provider: '' | 'anthropic', key: '' | 'env'): SettingsView => ({
 		settings: {
@@ -39,7 +56,8 @@ describe('configured', () => {
 			alert_lead_minutes: 10,
 			theme: '',
 			onboarded: true,
-			allowed_hosts: []
+			allowed_hosts: [],
+			time_zone: ''
 		},
 		keys: { anthropic: key, openai: '' }
 	});

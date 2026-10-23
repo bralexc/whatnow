@@ -1,5 +1,6 @@
 // Package settings holds the user's configuration and API keys. Settings live in SQLite as one
-// JSON document. API keys live in the OS keychain, never in the database.
+// JSON document. API keys live in the secrets store: the OS keychain locally, sealed in the user's
+// own database when hosted. Never in the settings document.
 package settings
 
 import (
@@ -71,6 +72,9 @@ type Settings struct {
 	// AllowedHosts are hostnames the server answers besides loopback, such as the machine's
 	// Tailscale name behind `tailscale serve`. Whoever reaches one gets full access.
 	AllowedHosts []string `json:"allowed_hosts"`
+	// TimeZone is an IANA name. Hosted users set it, since the server's clock isn't theirs;
+	// empty in local mode, which uses the machine's.
+	TimeZone string `json:"time_zone"`
 }
 
 // Nudges turns each kind of nudge on or off. The web client sends them; the server only keeps
@@ -143,6 +147,11 @@ func (s Settings) Validate() error {
 	for _, h := range s.AllowedHosts {
 		if h == "" || strings.ContainsAny(h, ":/ ") {
 			return fmt.Errorf("%w: allowed host %q must be a bare hostname, with no scheme or port", ErrInvalid, h)
+		}
+	}
+	if s.TimeZone != "" {
+		if _, err := time.LoadLocation(s.TimeZone); err != nil {
+			return fmt.Errorf("%w: time zone %q", ErrInvalid, s.TimeZone)
 		}
 	}
 	return nil
