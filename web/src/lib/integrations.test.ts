@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Field, Integration, PullResult } from './api';
-import { formFrom, isOn, newRow, picked, withoutEvent, withoutTicket } from './integrations';
+import { formFrom, isOn, newRow, picked, withoutEvent, withoutTicket, visibleFields } from './integrations';
 
 const calendars: Field = {
 	key: 'calendars',
@@ -88,5 +88,27 @@ describe('tickets', () => {
 
 	it('Should drop a skipped ticket from the result', () => {
 		expect(withoutTicket(result, 'A-2').sources[0].tickets).toEqual([tk('A-1'), tk('A-3')]);
+	});
+});
+
+describe('connection fields', () => {
+	const fields: Field[] = [
+		{ key: 'method', label: 'Connection method', kind: 'text', required: false },
+		{ key: 'api_key', label: 'API key', kind: 'secret', required: true, when: { method: ['api_key'] } },
+		{ key: 'client_id', label: 'Client ID', kind: 'text', required: true, when: { method: ['oauth'] } },
+		{ key: 'refresh_token', label: 'Authorization', kind: 'secret', required: true, hidden: true },
+		{ ...calendars, when: { method: [''] } }
+	];
+
+	it('Shows only fields for the selected connection method', () => {
+		expect(visibleFields(fields, {}).map((f) => f.key)).toEqual(['method', 'calendars']);
+		expect(visibleFields(fields, { method: 'oauth' }).map((f) => f.key)).toEqual(['method', 'client_id']);
+		expect(visibleFields(fields, { method: 'api_key' }).map((f) => f.key)).toEqual(['method', 'api_key']);
+	});
+
+	it('Keeps inactive settings in the form but never submits authorization tokens', () => {
+		const form = formFrom({ ...gcal, fields, values: { method: 'api_key', client_id: 'saved-client' } });
+		expect(form.values).toEqual({ method: 'api_key', api_key: '', client_id: 'saved-client' });
+		expect(form.lists.calendars).toHaveLength(1);
 	});
 });

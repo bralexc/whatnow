@@ -45,7 +45,15 @@ func TestIntegrationsListEachWithItsFields(t *testing.T) {
 		views[0].Pulls != integrations.PullsEvents || views[1].ID != "jira" || views[1].Pulls != integrations.PullsTickets {
 		t.Fatalf("views = %+v", views)
 	}
-	cal := views[0].Fields[0]
+	var cal integrations.Field
+	for _, f := range views[0].Fields {
+		if f.Key == "calendars" {
+			cal = f
+		}
+	}
+	if method := views[0].Fields[0]; method.Key != "method" || len(method.Options) != 3 {
+		t.Errorf("connection options = %+v", method)
+	}
 	if cal.Key != "calendars" || cal.Kind != integrations.List || len(cal.Fields) != 2 || cal.Fields[1].Kind != integrations.Secret {
 		t.Errorf("fields = %+v", views[0].Fields)
 	}

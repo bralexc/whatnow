@@ -1,4 +1,4 @@
-// Package gcal pulls events from Google Calendar through each calendar's secret iCal address.
+// Package gcal pulls events from Google Calendar using iCal, OAuth, or an API key.
 package gcal
 
 import (
@@ -39,20 +39,38 @@ func (*Calendar) Name() string { return "Google Calendar" }
 func (*Calendar) Pulls() integrations.Pulls { return integrations.PullsEvents }
 
 func (*Calendar) Fields() []integrations.Field {
-	return []integrations.Field{{
-		Key:      "calendars",
-		Label:    "Calendars",
-		Kind:     integrations.List,
-		Required: true,
-		Help:     "In Google Calendar: Settings → your calendar → Integrate calendar → Secret address in iCal format.",
-		Fields: []integrations.Field{
-			{Key: "label", Label: "Name", Kind: integrations.Text, Required: true},
-			{Key: "url", Label: "Secret address", Kind: integrations.Secret, Required: true},
-		},
-	}}
+	icalOnly := map[string][]string{"method": {""}}
+	apiOnly := map[string][]string{"method": {"oauth", "api_key"}}
+	oauthOnly := map[string][]string{"method": {"oauth"}}
+	return []integrations.Field{
+		{Key: "method", Label: "Connection method", Kind: integrations.Text, Options: []integrations.Option{
+			{Value: "", Label: "Secret iCal address"}, {Value: "oauth", Label: "Sign in with Google (OAuth)"}, {Value: "api_key", Label: "API key (public calendars only)"},
+		}},
+		{Key: "api_key", Label: "Google Calendar API key", Kind: integrations.Secret, Required: true, When: map[string][]string{"method": {"api_key"}},
+			Help: "Enable Google Calendar API in your Google Cloud project. API keys can only read public calendars. Restrict the key to Google Calendar API."},
+		{Key: "client_id", Label: "OAuth client ID", Kind: integrations.Text, Required: true, When: oauthOnly,
+			Help: "Create a Web application OAuth client in Google Cloud with Google Calendar API enabled."},
+		{Key: "client_secret", Label: "OAuth client secret", Kind: integrations.Secret, Required: true, When: oauthOnly},
+		{Key: "refresh_token", Label: "Google authorization", Kind: integrations.Secret, Required: true, When: oauthOnly, Hidden: true},
+		{Key: "api_calendars", Label: "Calendars", Kind: integrations.List, Required: true, When: apiOnly,
+			Help: "Find Calendar ID in Google Calendar → Settings → your calendar → Integrate calendar. With OAuth, primary selects your main calendar.",
+			Fields: []integrations.Field{
+				{Key: "label", Label: "Name", Kind: integrations.Text, Required: true},
+				{Key: "calendar_id", Label: "Calendar ID", Kind: integrations.Text, Required: true},
+			}},
+		{Key: "calendars", Label: "Calendars", Kind: integrations.List, Required: true, When: icalOnly,
+			Help: "In Google Calendar: Settings → your calendar → Integrate calendar → Secret address in iCal format.",
+			Fields: []integrations.Field{
+				{Key: "label", Label: "Name", Kind: integrations.Text, Required: true},
+				{Key: "url", Label: "Secret address", Kind: integrations.Secret, Required: true},
+			}},
+	}
 }
 
 func (c *Calendar) Pull(ctx context.Context, cfg integrations.Config, from, to time.Time) []integrations.Source {
+	if cfg.Values["method"] == "oauth" || cfg.Values["method"] == "api_key" {
+		return c.pullAPI(ctx, cfg, from, to)
+	}
 	var sources []integrations.Source
 	for _, row := range cfg.Lists["calendars"] {
 		src := integrations.Source{Label: row.Values["label"]}

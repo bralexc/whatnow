@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { api, type Integration, type PullResult } from '#lib/api.ts';
-	import { formFrom, isOn, newRow } from '#lib/integrations.ts';
+	import { formFrom, isOn, newRow, visibleFields } from '#lib/integrations.ts';
 	import { toasts } from '#lib/toasts.svelte.ts';
 	import PullResults from './PullResults.svelte';
 	import TicketPicker from './TicketPicker.svelte';
+	import GoogleOAuth from './GoogleOAuth.svelte';
 
 	interface Props {
 		integration: Integration;
@@ -80,7 +81,7 @@
 	</header>
 	{#if open}
 		<form onsubmit={save}>
-			{#each integration.fields as f (f.key)}
+			{#each visibleFields(integration.fields, form.values) as f (f.key)}
 				{#if f.kind === 'list'}
 					<fieldset>
 						<legend class="label">{f.label}</legend>
@@ -110,17 +111,28 @@
 							{f.label}
 							{#if f.kind === 'secret'}<span class="muted">({integration.secrets[f.key] ? 'saved' : 'not set'})</span>{/if}
 						</span>
-						<input
-							class="field"
-							type={f.kind === 'secret' ? 'password' : 'text'}
-							autocomplete="off"
-							placeholder={f.kind === 'secret' && integration.secrets[f.key] ? 'Leave blank to keep' : ''}
-							bind:value={form.values[f.key]}
-						/>
+						{#if f.options}
+							<select class="field" bind:value={form.values[f.key]}>
+								{#each f.options as option (option.value)}
+									<option value={option.value}>{option.label}</option>
+								{/each}
+							</select>
+						{:else}
+							<input
+								class="field"
+								type={f.kind === 'secret' ? 'password' : 'text'}
+								autocomplete="off"
+								placeholder={f.kind === 'secret' && integration.secrets[f.key] ? 'Leave blank to keep' : ''}
+								bind:value={form.values[f.key]}
+							/>
+						{/if}
 						{#if f.help}<span class="muted hint">{f.help}</span>{/if}
 					</label>
 				{/if}
 			{/each}
+			{#if integration.id === 'gcal' && form.values.method === 'oauth'}
+				<GoogleOAuth bind:integration bind:form />
+			{/if}
 			{#if integration.skipped.length}
 				<div>
 					<span class="label">Skipped</span>

@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jameynakama/whatnow/internal/agent"
@@ -50,6 +51,8 @@ type Deps struct {
 
 type Server struct {
 	Deps
+	oauthMu    sync.Mutex
+	oauthFlows map[string]oauthFlow
 }
 
 // Mutation is the response to every write. It carries the batch ID so the UI can offer undo.
@@ -94,6 +97,9 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/settings/test", s.testConnection)
 	mux.HandleFunc("GET /api/v1/integrations", s.listIntegrations)
 	mux.HandleFunc("PUT /api/v1/integrations/{id}", s.saveIntegration)
+	mux.HandleFunc("POST /api/v1/integrations/{id}/oauth/start", s.startOAuth)
+	mux.HandleFunc("GET /api/v1/integrations/{id}/oauth/callback", s.finishOAuth)
+	mux.HandleFunc("DELETE /api/v1/integrations/{id}/oauth", s.disconnectOAuth)
 	mux.HandleFunc("PUT /api/v1/integrations/{id}/enabled", s.enableIntegration)
 	mux.HandleFunc("POST /api/v1/integrations/{id}/pull", s.pullIntegration)
 	mux.HandleFunc("POST /api/v1/integrations/{id}/add", s.addTickets)

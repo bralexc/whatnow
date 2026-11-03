@@ -109,17 +109,18 @@ func (r *Runner) view(ctx context.Context, in Integration) (View, error) {
 		v.Skipped = []Skip{}
 	}
 	for _, f := range v.Fields {
+		required := f.Required && f.Active(s.Values)
 		switch f.Kind {
 		case Text:
 			v.Values[f.Key] = s.Values[f.Key]
-			v.Ready = v.Ready && (!f.Required || s.Values[f.Key] != "")
+			v.Ready = v.Ready && (!required || s.Values[f.Key] != "")
 		case Secret:
 			val, err := secret(account(in.ID(), "", f.Key))
 			if err != nil {
 				return View{}, err
 			}
 			v.Secrets[f.Key] = val != ""
-			v.Ready = v.Ready && (!f.Required || val != "")
+			v.Ready = v.Ready && (!required || val != "")
 		case List:
 			rows := []RowView{}
 			for _, row := range s.Lists[f.Key] {
@@ -138,7 +139,7 @@ func (r *Runner) view(ctx context.Context, in Integration) (View, error) {
 				rows = append(rows, rv)
 			}
 			v.Lists[f.Key] = rows
-			v.Ready = v.Ready && (!f.Required || len(rows) > 0)
+			v.Ready = v.Ready && (!required || len(rows) > 0)
 		}
 	}
 	return v, nil
@@ -184,10 +185,30 @@ func (r *Runner) Save(ctx context.Context, id string, u Update) (View, error) {
 			return View{}, fmt.Errorf("%w: %s has no list %q", service.ErrInvalid, in.Name(), key)
 		}
 	}
+	activeValues := map[string]string{}
+	for key, value := range u.Values {
+		activeValues[key] = strings.TrimSpace(value)
+	}
 	for _, f := range fields {
+		if f.Hidden && u.Values[f.Key] != "" {
+			return View{}, fmt.Errorf("%w: %s is managed by sign-in", service.ErrInvalid, f.Label)
+		}
+		// Preserve saved settings for inactive methods; hidden unfinished rows must not block saving.
+		if !f.Active(activeValues) {
+			if f.Kind == Text {
+				next.Values[f.Key] = s.Values[f.Key]
+			}
+			if f.Kind == List {
+				next.Lists[f.Key] = s.Lists[f.Key]
+			}
+			continue
+		}
 		switch f.Kind {
 		case Text:
 			next.Values[f.Key] = strings.TrimSpace(u.Values[f.Key])
+			if len(f.Options) > 0 && !slices.ContainsFunc(f.Options, func(o Option) bool { return o.Value == next.Values[f.Key] }) {
+				return View{}, fmt.Errorf("%w: choose a valid %s", service.ErrInvalid, f.Label)
+			}
 		case Secret:
 			if v := strings.TrimSpace(u.Values[f.Key]); v != "" {
 				writes[account(id, "", f.Key)] = v
@@ -198,6 +219,19 @@ func (r *Runner) Save(ctx context.Context, id string, u Update) (View, error) {
 				return View{}, err
 			}
 			next.Lists[f.Key] = rows
+		}
+	}
+	// A refresh token belongs to the OAuth client that requested it.
+	if _, ok := in.(OAuth); ok {
+		oldSecret, err := secret(account(id, "", "client_secret"))
+		if err != nil {
+			return View{}, err
+		}
+		newSecret := writes[account(id, "", "client_secret")]
+		if next.Values["client_id"] != s.Values["client_id"] || (newSecret != "" && newSecret != oldSecret) {
+			if err := DeleteSecrets([]string{account(id, "", "refresh_token")}); err != nil {
+				return View{}, err
+			}
 		}
 	}
 	for acct, v := range writes {
