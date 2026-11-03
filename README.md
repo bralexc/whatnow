@@ -25,8 +25,8 @@ For a feel of a whole day, from the morning brain dump to the wrap-up, read [dem
   follows.
 - **Nudges:** before events, when they end, and as the day winds down, in the web UI.
 - **Wrap up:** see what you got done, triage what's left, and leave a note for tomorrow.
-- **Integrations:** pull today's meetings from Google Calendar (by each calendar's secret iCal
-  address, no OAuth), and pick tasks from Jira tickets (by your own JQL search) and from the PRs
+- **Integrations:** pull today's meetings from Google Calendar (with OAuth, an API key for public calendars,
+  or each calendar's secret iCal address), and pick tasks from Jira tickets (by your own JQL search) and from the PRs
   a running [Review Queue](https://github.com/oreillymedia-ai-transformation/review-queue) ranks
   for your review. Pulls happen only when you ask, from the morning brain dump or from settings.
 
@@ -113,6 +113,34 @@ settings. Anyone who can reach an allowed host gets full access, so don't put it
 
 Open the web UI once to set up a model. After that, use either UI, or both at once, since they
 stay in sync. In the terminal, press `?` for the keys.
+
+### Connect Google Calendar
+
+Open **Settings → Integrations → Google Calendar**, choose a connection method, and turn it on:
+
+- **Sign in with Google (OAuth):** for private or public calendars. In Google Cloud, enable the
+  Google Calendar API, configure the OAuth consent screen (add yourself as a test user if the
+  app is in testing), and create a **Web application** OAuth client. Add the exact redirect URI
+  shown in whatnow to its authorized redirect URIs. Enter the client ID and client secret, add
+  your Calendar IDs (`primary` works for your main calendar), then choose **Save and connect
+  with Google** and grant read-only event access. The app refreshes authorization when pulling.
+  Google may expire refresh tokens for apps left in testing; reconnect if that happens.
+- **API key:** for public calendars only. Enable Google Calendar API in your Google Cloud
+  project and create an API key restricted to that API. Enter it along with each public
+  Calendar ID. A key cannot access your private calendar. Requests come from the local server,
+  so browser referrer restrictions do not work; use a suitable IP restriction if available.
+- **Secret iCal address:** the existing method still works. Copy the secret address from
+  Google Calendar → Settings → your calendar → Integrate calendar.
+
+Calendar IDs are also under **Integrate calendar**. Give each calendar a name, save, and choose
+**Pull today**, or pull during the morning ritual. Only timed events starting today are imported;
+all-day, cancelled, and declined events are omitted. Recurring instances retain their identity
+when moved, including when switching from iCal to the API.
+
+API keys, client secrets, and OAuth refresh tokens stay in the OS keychain. **Disconnect** removes
+whatnow's saved OAuth authorization; you can also revoke access in your Google account's
+third-party connections. Changing OAuth client credentials requires signing in again. Use HTTPS
+for OAuth when accessing whatnow remotely; HTTP is supported on loopback addresses.
 
 ### The terminal UI
 

@@ -207,6 +207,9 @@ export interface Field {
 	help?: string;
 	required: boolean;
 	fields?: Field[];
+	options?: { value: string; label: string }[];
+	when?: Record<string, string[]>;
+	hidden?: boolean;
 }
 
 /** A list row. Secrets show only whether they're set. */
@@ -339,6 +342,9 @@ export const api = {
 		request<void>('PUT', `/settings/keys/${provider}`, { key }),
 	testConnection: () => request<ConnectionResult>('POST', '/settings/test'),
 	deleteData: () => request<void>('DELETE', '/data'),
+	startOAuth: (id: string, redirect_uri: string) =>
+		request<{ url: string }>('POST', `/integrations/${id}/oauth/start`, { redirect_uri }),
+	disconnectOAuth: (id: string) => request<Integration>('DELETE', `/integrations/${id}/oauth`),
 	integrations: () => request<Integration[]>('GET', '/integrations'),
 	saveIntegration: (id: string, u: IntegrationUpdate) => request<Integration>('PUT', `/integrations/${id}`, u),
 	enableIntegration: (id: string, enabled: boolean) =>

@@ -8,6 +8,7 @@ export function formFrom(i: Integration): IntegrationUpdate {
 	const values: Record<string, string> = {};
 	const lists: IntegrationUpdate['lists'] = {};
 	for (const f of i.fields) {
+		if (f.hidden) continue;
 		if (f.kind === 'text') values[f.key] = i.values[f.key] ?? '';
 		if (f.kind === 'secret') values[f.key] = '';
 		if (f.kind === 'list') {
@@ -52,4 +53,9 @@ export function withoutTicket(result: PullResult, key: string): PullResult {
 		...result,
 		sources: result.sources.map((s) => ({ ...s, tickets: s.tickets.filter((t) => t.key !== key) }))
 	};
+}
+
+/** Keep inactive connection settings intact when switching methods. */
+export function visibleFields(fields: Field[], values: Record<string, string>): Field[] {
+	return fields.filter((f) => !f.hidden && Object.entries(f.when ?? {}).every(([key, allowed]) => allowed.includes(values[key] ?? '')));
 }

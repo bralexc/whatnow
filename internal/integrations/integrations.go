@@ -4,6 +4,7 @@ package integrations
 
 import (
 	"context"
+	"slices"
 	"time"
 )
 
@@ -47,8 +48,13 @@ type Field struct {
 	Help string `json:"help,omitempty"`
 	// Required means the integration can't pull without it. A required list needs a row, and a
 	// row needs its required columns before it can be saved.
-	Required bool    `json:"required"`
-	Fields   []Field `json:"fields,omitempty"`
+	Required bool     `json:"required"`
+	Fields   []Field  `json:"fields,omitempty"`
+	Options  []Option `json:"options,omitempty"`
+	// When limits when the field is shown and required; inactive values are retained.
+	When map[string][]string `json:"when,omitempty"`
+	// Hidden secrets can only be changed by the server's OAuth flow.
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 // Config is an integration's saved values with its secrets filled in.
@@ -93,4 +99,18 @@ type Ticket struct {
 	// Rereview means the source is asking for this again, so a done or dropped task with its key
 	// doesn't hide it, such as a pull request whose review was requested again.
 	Rereview bool `json:"rereview,omitempty"`
+}
+
+type Option struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+func (f Field) Active(values map[string]string) bool {
+	for key, allowed := range f.When {
+		if !slices.Contains(allowed, values[key]) {
+			return false
+		}
+	}
+	return true
 }

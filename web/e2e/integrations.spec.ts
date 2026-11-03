@@ -61,3 +61,45 @@ test('a calendar pulls into the morning, and always skip keeps a series out', as
 		server.close();
 	}
 });
+
+test('Google Calendar switches connection methods and keeps API credentials private', async ({ page, request }) => {
+	await setUp(request);
+	await page.goto('/settings/integrations');
+	await page.getByRole('button', { name: /Google Calendar/ }).click();
+	const method = page.getByLabel('Connection method');
+	await method.selectOption('api_key');
+	await expect(page.getByText(/API keys can only read public calendars/)).toBeVisible();
+	await page.getByLabel('Google Calendar API key').fill('test-api-key');
+	await page.getByRole('button', { name: '+ Add' }).click();
+	await page.getByLabel('Name', { exact: true }).fill('Public');
+	await page.getByLabel('Calendar ID', { exact: true }).fill('public@example.com');
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(page.getByLabel('Google Calendar API key')).toHaveValue('');
+	await page.locator('.card', { hasText: 'Google Calendar' }).getByRole('switch').check();
+	await expect(page.getByRole('button', { name: 'Pull today' })).toBeEnabled();
+	await method.selectOption('oauth');
+	await expect(page.getByLabel('Google Calendar API key')).toHaveCount(0);
+	await page.getByLabel('OAuth client ID').fill('test-client');
+	await page.getByLabel('OAuth client secret').fill('test-secret');
+	await expect(page.locator('code')).toContainText('/api/v1/integrations/gcal/oauth/callback');
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'Pull today' })).toBeDisabled();
+	await expect(page.getByLabel('Google authorization')).toHaveCount(0);
+	// Exercise the real start and callback without visiting Google or granting live access.
+	await page.route('https://accounts.google.com/**', async (route) => {
+		const target = new URL(route.request().url());
+		const callback = new URL(target.searchParams.get('redirect_uri')!);
+		callback.searchParams.set('state', target.searchParams.get('state')!);
+		callback.searchParams.set('error', 'access_denied');
+		await route.fulfill({ status: 302, headers: { location: callback.toString() } });
+	});
+	await page.getByRole('button', { name: 'Save and connect with Google' }).click();
+	await expect(page.getByRole('status')).toContainText('Google sign-in was cancelled or access was denied');
+	await page.getByRole('button', { name: /Google Calendar/ }).click();
+	await page.getByLabel('Connection method').selectOption('api_key');
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'Pull today' })).toBeEnabled();
+	const views = await (await request.get('/api/v1/integrations')).text();
+	expect(views).not.toContain('test-api-key');
+	expect(views).not.toContain('test-secret');
+});
